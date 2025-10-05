@@ -1,0 +1,1 @@
+export const API_BASE_URL = "https://php-laravel-docker-j6so.onrender.com/api"; // Cambia esta IP por la de tu backend
