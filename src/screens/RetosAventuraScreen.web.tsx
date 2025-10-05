@@ -106,19 +106,27 @@ export default function RetosAventuraScreen() {
               <View key={idx} style={styles.recuerdoCard}>
                 {mem.type === "photo" && (
                   <>
-                    <TouchableOpacity onPress={() => handleImagePress(`${BACKEND_URL}/storage/${mem.file_path}`)}>
-                      <Image
-                        source={{ uri: `${BACKEND_URL}/storage/${mem.file_path}` }}
-                        style={{ width: 320, height: 220, borderRadius: 16, marginBottom: 8 }}
-                        resizeMode="cover"
-                      />
-                    </TouchableOpacity>
+                    {(() => {
+                      const uri = mem.file_path && (mem.file_path.startsWith('http') ? mem.file_path : `${BACKEND_URL}/storage/${mem.file_path}`);
+                      return (
+                        <TouchableOpacity onPress={() => handleImagePress(uri)}>
+                          <Image
+                            source={{ uri }}
+                            style={{ width: 320, height: 220, borderRadius: 16, marginBottom: 8 }}
+                            resizeMode="cover"
+                          />
+                        </TouchableOpacity>
+                      );
+                    })()}
                   </>
                 )}
                 {mem.type === "note" && <Text style={styles.recuerdoNote}>{mem.note}</Text>}
-                {mem.type === "video" && (
-                  <Text style={styles.recuerdoImg}>[Video: {mem.file_path}]</Text>
-                )}
+                {mem.type === "video" && (() => {
+                  const uri = mem.file_path && (mem.file_path.startsWith('http') ? mem.file_path : `${BACKEND_URL}/storage/${mem.file_path}`);
+                  return (
+                    <video src={uri} controls style={{ width: 320, height: 220, borderRadius: 12 }} />
+                  );
+                })()}
               </View>
             ))}
           </View>

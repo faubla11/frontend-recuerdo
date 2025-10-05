@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { View, Text, StyleSheet, ScrollView, Image, SafeAreaView, TouchableOpacity } from "react-native";
+import { Video, ResizeMode } from 'expo-av';
 import { useRoute } from "@react-navigation/native";
 import { palette } from "./MisAlbumesScreen";
 import LottieView from "lottie-react-native";
@@ -237,17 +238,28 @@ export default function AlbumCompletoScreen() {
         <View style={styles.recuerdosGrid}>
           {recuerdosFiltrados.map((r: any, i: number) => (
             <View key={i} style={styles.recuerdoCard}>
-              {r.type === "photo" && (
-                <Image
-                  source={{ uri: `${BACKEND_URL}/storage/${r.file_path}` }}
-                  style={{ width: 180, height: 120, borderRadius: 10, marginBottom: 8 }}
-                  resizeMode="cover"
-                />
-              )}
+              {r.type === "photo" && (() => {
+                const uri = r.file_path && (r.file_path.startsWith('http') ? r.file_path : `${BACKEND_URL}/storage/${r.file_path}`);
+                return (
+                  <Image
+                    source={{ uri }}
+                    style={{ width: 180, height: 120, borderRadius: 10, marginBottom: 8 }}
+                    resizeMode="cover"
+                  />
+                );
+              })()}
               {r.type === "note" && <Text style={styles.recuerdoNote}>{r.note}</Text>}
-              {r.type === "video" && (
-                <Text style={styles.recuerdoImg}>[Video: {r.file_path}]</Text>
-              )}
+              {r.type === "video" && (() => {
+                const uri = r.file_path && (r.file_path.startsWith('http') ? r.file_path : `${BACKEND_URL}/storage/${r.file_path}`);
+                return (
+                  <Video
+                    source={{ uri }}
+                    style={{ width: 180, height: 120, borderRadius: 10, marginBottom: 8 }}
+                    useNativeControls
+                    resizeMode={ResizeMode.CONTAIN}
+                  />
+                );
+              })()}
             </View>
           ))}
         </View>

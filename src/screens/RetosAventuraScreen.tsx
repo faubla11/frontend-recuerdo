@@ -7,8 +7,10 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
+import * as MediaLibrary from 'expo-media-library';
 import ConfettiCannon from "react-native-confetti-cannon";
 import ImageViewing from "react-native-image-viewing";
+import { Video, ResizeMode } from 'expo-av';
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -79,14 +81,39 @@ export default function RetosAventuraScreen() {
       document.body.removeChild(link);
       Alert.alert("Descarga iniciada", "La imagen se descargará en tu navegador.");
     } else {
-      // Móvil: descarga usando FileSystem.documentDirectory
+      // Móvil: descarga usando FileSystem y guarda en la galería con expo-media-library
       try {
         const filename = uri.split("/").pop() || "descarga.jpg";
-        const downloadUri = FileSystem.documentDirectory + filename;
-        await FileSystem.downloadAsync(uri, downloadUri);
-        Alert.alert("Descarga completa", "La imagen se guardó en tus archivos.");
+        const downloadPath = FileSystem.cacheDirectory + filename;
+
+        // Pedir permiso para acceder a la galería
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permiso denegado', 'Necesitamos permiso para guardar el archivo en tu galería.');
+          return;
+        }
+
+        const downloadResult = await FileSystem.downloadAsync(uri, downloadPath);
+
+        // Crear un asset y agregarlo a un álbum llamado 'Recuerdos'
+        const asset = await MediaLibrary.createAssetAsync(downloadResult.uri);
+        const albumName = 'Recuerdos';
+        try {
+          const album = await MediaLibrary.getAlbumAsync(albumName);
+          if (album == null) {
+            await MediaLibrary.createAlbumAsync(albumName, asset, false);
+          } else {
+            await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+          }
+        } catch (e) {
+          // Si falla crear/añadir al álbum, al menos dejamos el asset en la galería
+          console.warn('No se pudo crear/añadir album:', e);
+        }
+
+        Alert.alert('Descarga completa', 'El archivo se guardó en tu galería.');
       } catch (e) {
-        Alert.alert("Error", "No se pudo descargar la imagen.");
+        console.error(e);
+        Alert.alert('Error', 'No se pudo descargar el archivo.');
       }
     }
   };
@@ -126,27 +153,38 @@ export default function RetosAventuraScreen() {
           {recuerdo && recuerdo.length > 0 ? (
             recuerdo.map((mem: any, idx: number) => (
               <View key={idx} style={styles.recuerdoCard}>
-                {mem.type === "photo" && (
-                  <>
-                    <TouchableOpacity onPress={() => handleImagePress(`${BACKEND_URL}/storage/${mem.file_path}`)}>
-                      <Image
-                        source={{ uri: `${BACKEND_URL}/storage/${mem.file_path}` }}
-                        style={{ width: maxImageWidth, height: (maxImageWidth * 9) / 16, borderRadius: 12, marginBottom: 8 }}
-                        resizeMode="cover"
-                      />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.downloadBtn}
-                      onPress={() => handleDownload(`${BACKEND_URL}/storage/${mem.file_path}`)}
-                    >
-                      <Text style={styles.downloadBtnText}>Descargar</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+                {mem.type === "photo" && (() => {
+                  const uri = mem.file_path && (mem.file_path.startsWith('http') ? mem.file_path : `${BACKEND_URL}/storage/${mem.file_path}`);
+                  return (
+                    <>
+                      <TouchableOpacity onPress={() => handleImagePress(uri)}>
+                        <Image
+                          source={{ uri }}
+                          style={{ width: maxImageWidth, height: (maxImageWidth * 9) / 16, borderRadius: 12, marginBottom: 8 }}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.downloadBtn}
+                        onPress={() => handleDownload(uri)}
+                      >
+                        <Text style={styles.downloadBtnText}>Descargar</Text>
+                      </TouchableOpacity>
+                    </>
+                  );
+                })()}
                 {mem.type === "note" && <Text style={styles.recuerdoNote}>{mem.note}</Text>}
-                {mem.type === "video" && (
-                  <Text style={styles.recuerdoImg}>[Video: {mem.file_path}]</Text>
-                )}
+                {mem.type === "video" && (() => {
+                  const uri = mem.file_path && (mem.file_path.startsWith('http') ? mem.file_path : `${BACKEND_URL}/storage/${mem.file_path}`);
+                  return (
+                    <Video
+                      source={{ uri }}
+                      style={{ width: Math.min(360, Dimensions.get("window").width - 48), height: 220, borderRadius: 12 }}
+                      useNativeControls
+                      resizeMode={ResizeMode.CONTAIN}
+                    />
+                  );
+                })()}
               </View>
             ))
           ) : (

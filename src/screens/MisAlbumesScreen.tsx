@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
-  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Image, Platform, Dimensions, ScrollView, ImageBackground
+  View, Text, StyleSheet, TouchableOpacity, TextInput, ActivityIndicator, Image, Platform, Dimensions, ScrollView, ImageBackground, Alert
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -10,6 +10,11 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as ImagePicker from "expo-image-picker";
+import { SUPABASE } from "../config";
+import { createClient } from '@supabase/supabase-js';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Buffer } from 'buffer';
+const supabase = createClient(SUPABASE.URL, SUPABASE.ANON_KEY);
 
 const API_BASE = "https://php-laravel-docker-j6so.onrender.com";
 
@@ -518,30 +523,41 @@ const styles = StyleSheet.create({
 });
 
 async function uploadAlbumBgImage(albumId: number, uri: string, token: string) {
-  // 1) ask backend for signed upload URL
-  const infoRes = await fetch(API_ROUTES.SIGN_UPLOAD, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: "album-bg.jpg", content_type: "image/jpeg" }),
-  });
-  if (!infoRes.ok) throw new Error("No se pudo obtener signed url");
-  const info = await infoRes.json();
+  try {
+    const { SUPABASE } = await import('../config');
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(SUPABASE.URL, SUPABASE.ANON_KEY);
 
-  // 2) PUT file directly to Supabase signed URL
-  const fileResp = await fetch(uri);
-  const fileBuffer = await fileResp.arrayBuffer();
-  const putResp = await fetch(info.upload_url, {
-    method: "PUT",
-    headers: { "Content-Type": "image/jpeg" },
-    body: fileBuffer,
-  });
-  if (!putResp.ok) throw new Error("Error subiendo a Supabase");
+    const ext = 'jpg';
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+  // Some TypeScript environments for expo-file-system don't expose EncodingType.
+  // Use the literal 'base64' and cast to any to satisfy the runtime API while avoiding TS errors.
+  const b64 = await FileSystem.readAsStringAsync(uri, { encoding: 'base64' as any });
+    const fileBuffer = Buffer.from(b64, 'base64');
 
-  // 3) tell backend to save bg_image using public_url
-  const res = await fetch(API_ROUTES.UPDATE_ALBUM_BG_IMAGE(albumId), {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ bg_image_url: info.public_url }),
-  });
-  return res.json();
+    const { data, error } = await supabase.storage.from(SUPABASE.BUCKET).upload(filename, fileBuffer, {
+      cacheControl: '3600',
+      upsert: false,
+      contentType: 'image/jpeg',
+    });
+    if (error) {
+      console.error('Supabase upload error', error);
+      Alert.alert('Error', 'No se pudo subir la imagen de fondo');
+      throw new Error('Supabase upload error');
+    }
+
+    const { data: publicData } = supabase.storage.from(SUPABASE.BUCKET).getPublicUrl(data.path);
+    const publicUrl = publicData?.publicUrl;
+
+    const res = await fetch(API_ROUTES.UPDATE_ALBUM_BG_IMAGE(albumId), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bg_image_url: publicUrl }),
+    });
+
+    return res.json();
+  } catch (e) {
+    console.error(e);
+    throw e;
+  }
 }

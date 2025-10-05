@@ -18,6 +18,11 @@ import * as ImagePicker from "expo-image-picker";
 import { useRoute, useNavigation } from "@react-navigation/native";
 import { API_ROUTES } from "../api/routes";
 import { useUser } from "../contexts/UserContext";
+import { SUPABASE } from "../config";
+import { createClient } from '@supabase/supabase-js';
+import * as FileSystem from 'expo-file-system/legacy';
+import { Buffer } from 'buffer';
+const supabase = createClient(SUPABASE.URL, SUPABASE.ANON_KEY);
 
 const palette = {
   bg1: "#fff6fb",
@@ -109,43 +114,53 @@ export default function AddMemoryScreen() {
           });
           if (!res.ok) success = false;
         } else if (mem.uri) {
-          // 1) request a signed upload URL from our backend
-          const infoRes = await fetch(API_ROUTES.SIGN_UPLOAD, {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ name: mem.name, content_type: mem.type === "photo" ? "image/jpeg" : "video/mp4" }),
-          });
-          if (!infoRes.ok) {
+          // Direct upload to Supabase using anon key (bucket must be public or allow anon upload)
+          try {
+            const ext = (mem.name || '').split('.').pop() || (mem.type === 'photo' ? 'jpg' : 'mp4');
+            const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+            // Read file as base64 (expo-file-system) and convert to Buffer
+            // Some TypeScript setups don't expose EncodingType on expo-file-system typings.
+            // Use the literal 'base64' and cast to any to avoid the TS error while keeping runtime behavior.
+            const b64 = await FileSystem.readAsStringAsync(mem.uri, { encoding: 'base64' as any });
+            const fileBuffer = Buffer.from(b64, 'base64');
+
+            const { data, error } = await supabase.storage.from(SUPABASE.BUCKET).upload(filename, fileBuffer, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: mem.type === 'photo' ? 'image/jpeg' : 'video/mp4',
+            });
+
+            if (error) {
+              console.error('Supabase upload error', error);
+              Alert.alert('Error', 'No se pudo subir el archivo a Supabase');
+              success = false;
+              continue;
+            }
+
+            const { data: publicData } = supabase.storage.from(SUPABASE.BUCKET).getPublicUrl(data.path);
+            const publicUrl = publicData?.publicUrl;
+
+            if (!publicUrl) {
+              Alert.alert('Error', 'No se pudo obtener la URL pública del archivo');
+              success = false;
+              continue;
+            }
+
+            const createRes = await fetch(API_ROUTES.ADD_MEMORY(challenge.id), {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ type: mem.type, file_url: publicUrl }),
+            });
+            if (!createRes.ok) {
+              Alert.alert('Error', 'No se pudo registrar el recuerdo en el servidor');
+              success = false;
+            }
+          } catch (e) {
+            console.error(e);
+            Alert.alert('Error', 'Ocurrió un error al subir el archivo');
             success = false;
-            continue;
           }
-          const info = await infoRes.json();
-
-          const uploadUrl = info.upload_url;
-          const publicUrl = info.public_url;
-
-          // 2) fetch the file as blob/arrayBuffer and PUT it to Supabase signed URL
-          const fileResp = await fetch(mem.uri);
-          const fileBuffer = await fileResp.arrayBuffer();
-
-          const putResp = await fetch(uploadUrl, {
-            method: "PUT",
-            headers: { "Content-Type": mem.type === "photo" ? "image/jpeg" : "video/mp4" },
-            body: fileBuffer,
-          });
-
-          if (!putResp.ok && putResp.status !== 200 && putResp.status !== 201) {
-            success = false;
-            continue;
-          }
-
-          // 3) notify backend to create Memory record with file_url
-          const createRes = await fetch(API_ROUTES.ADD_MEMORY(challenge.id), {
-            method: "POST",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ type: mem.type, file_url: publicUrl }),
-          });
-          if (!createRes.ok) success = false;
         }
       } catch (e) {
         console.error(e);
