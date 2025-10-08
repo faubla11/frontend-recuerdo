@@ -42,7 +42,7 @@ const CATEGORIES = [
 
 export default function MisAlbumesScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { token } = useUser();
+  const { token, loading: userLoading } = useUser();
 
   const [albums, setAlbums] = useState<any[]>([]);
   const [stats, setStats] = useState<any>({});
@@ -53,6 +53,15 @@ export default function MisAlbumesScreen() {
 
   useEffect(() => {
     const load = async () => {
+      // Wait until user context finishes checking session
+      if (userLoading) return;
+      // If there's no token, inform user and don't call protected endpoints
+      if (!token) {
+        setLoading(false);
+        Alert.alert('Sesión', 'No estás autenticado. Por favor inicia sesión para ver tus álbumes.');
+        return;
+      }
+
       setLoading(true);
       try {
         if (showCompletedOnly) {
