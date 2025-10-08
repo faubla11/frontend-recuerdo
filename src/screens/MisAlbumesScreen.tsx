@@ -49,25 +49,43 @@ export default function MisAlbumesScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("all");
+  const [showCompletedOnly, setShowCompletedOnly] = useState(false);
 
   useEffect(() => {
-    fetch(API_ROUTES.GET_ALBUMS(), {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => {
-        // Convierte bgImage a absoluta si es necesario
-        const albumsWithAbsoluteUrl = data.albums.map((album: any) => {
-          if (album.bgImage && album.bgImage.startsWith("/")) {
-            return { ...album, bgImage: "https://php-laravel-docker-j6so.onrender.com" + album.bgImage };
-          }
-          return album;
-        });
-        setAlbums(albumsWithAbsoluteUrl);
-        setStats(data.stats);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+    const load = async () => {
+      setLoading(true);
+      try {
+        if (showCompletedOnly) {
+          const res = await fetch(API_ROUTES.GET_COMPLETED_ALBUMS(), { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json();
+          const albumsWithAbsoluteUrl = data.albums.map((album: any) => {
+            if (album.bgImage && album.bgImage.startsWith("/")) {
+              return { ...album, bgImage: "https://php-laravel-docker-j6so.onrender.com" + album.bgImage };
+            }
+            return album;
+          });
+          setAlbums(albumsWithAbsoluteUrl);
+        } else {
+          const res = await fetch(API_ROUTES.GET_ALBUMS(), { headers: { Authorization: `Bearer ${token}` } });
+          const data = await res.json();
+          const albumsWithAbsoluteUrl = data.albums.map((album: any) => {
+            if (album.bgImage && album.bgImage.startsWith("/")) {
+              return { ...album, bgImage: "https://php-laravel-docker-j6so.onrender.com" + album.bgImage };
+            }
+            return album;
+          });
+          setAlbums(albumsWithAbsoluteUrl);
+          setStats(data.stats);
+        }
+      } catch (e) {
+        console.error('Error cargando álbumes', e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    load();
+  }, [showCompletedOnly]);
 
   const filteredAlbums = albums.filter(a => {
     // Normaliza ambos valores
@@ -168,6 +186,24 @@ export default function MisAlbumesScreen() {
               ]}>{cat.label}</Text>
             </TouchableOpacity>
           ))}
+          {/* Toggle para mostrar solo completados */}
+          <TouchableOpacity
+            style={[
+              styles.filterBtn,
+              showCompletedOnly && { backgroundColor: palette.pink }
+            ]}
+            onPress={() => setShowCompletedOnly(prev => !prev)}
+          >
+            <MaterialCommunityIcons
+              name="check-circle"
+              size={18}
+              color={showCompletedOnly ? "#fff" : palette.pink}
+            />
+            <Text style={[
+              styles.filterBtnText,
+              showCompletedOnly && { color: "#fff" }
+            ]}>Completados</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Área de álbumes con fondo decorativo */}
@@ -287,6 +323,11 @@ function AlbumRow({ albums, onPress, onPickImage }: { albums: any[]; onPress: (a
               }}>
                 {album.title}
               </Text>
+              {album.completed && (
+                <View style={{ position: 'absolute', top: 6, right: 6, backgroundColor: '#2ecc71', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 }}>
+                  <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>Completado</Text>
+                </View>
+              )}
               {/* Botón para elegir imagen de fondo */}
               <TouchableOpacity
                 style={{

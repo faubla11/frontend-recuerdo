@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Image, Dimensions, Platform, Modal, Linking, ScrollView } from "react-native";
 import { API_ROUTES } from "../api/routes";
+import { useUser } from '../contexts/UserContext';
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { palette } from "./MisAlbumesScreen";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -21,6 +22,7 @@ export default function RetosAventuraScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute();
   const { album } = route.params as any;
+  const { token } = useUser();
   const [current, setCurrent] = useState(0);
   const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,6 +52,18 @@ export default function RetosAventuraScreen() {
       setShowRecuerdo(true);
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3500);
+      // Si este fue el último reto, notificar al backend que el álbum está completado
+      try {
+        const isLast = current + 1 >= retos.length;
+        if (isLast && token) {
+          await fetch(API_ROUTES.MARK_ALBUM_COMPLETED(album.id), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          });
+        }
+      } catch (e) {
+        console.warn('No se pudo marcar álbum como completado:', e);
+      }
     } else {
       Alert.alert("Respuesta incorrecta", "Intenta de nuevo.");
     }
