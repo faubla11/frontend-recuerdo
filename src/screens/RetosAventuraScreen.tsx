@@ -42,10 +42,16 @@ export default function RetosAventuraScreen() {
     setLoading(true);
     const res = await fetch(API_ROUTES.VALIDATE_CHALLENGE(reto.id), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Accept: 'application/json' },
       body: JSON.stringify({ answer }),
     });
     setLoading(false);
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('VALIDATE_CHALLENGE failed', res.status, text);
+      Alert.alert('Error', 'No se pudo validar la respuesta. Intenta de nuevo.');
+      return;
+    }
     const data = await res.json();
     if (data.correct) {
       setRecuerdo(data.memories);
@@ -56,10 +62,14 @@ export default function RetosAventuraScreen() {
       try {
         const isLast = current + 1 >= retos.length;
         if (isLast && token) {
-          await fetch(API_ROUTES.MARK_ALBUM_COMPLETED(album.id), {
+          const resp = await fetch(API_ROUTES.MARK_ALBUM_COMPLETED(album.id), {
             method: 'POST',
-            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
           });
+          if (!resp.ok) {
+            const text = await resp.text();
+            console.warn('MARK_ALBUM_COMPLETED failed', resp.status, text);
+          }
         }
       } catch (e) {
         console.warn('No se pudo marcar álbum como completado:', e);

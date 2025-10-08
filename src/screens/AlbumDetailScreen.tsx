@@ -15,6 +15,9 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { useRoute, useNavigation } from "@react-navigation/native";
+import { API_ROUTES } from "../api/routes";
+import { useUser } from '../contexts/UserContext';
+import { Switch } from 'react-native';
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../../App"; // Ajusta la ruta si es necesario
 
@@ -38,20 +41,10 @@ export default function AlbumDetailScreen() {
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute();
   const { width } = useWindowDimensions();
+  const { token } = useUser();
 
   // Recibe el álbum por params
-  const { album } = route.params as {
-    album: {
-      id: number;
-      title: string;
-      description?: string;
-      category: string;
-      code: string;
-      share_url: string;
-      retos_count?: number;
-      veces_resuelto?: number;
-    };
-  };
+  const { album } = route.params as any;
 
   // Copiar código o link
   const copyToClipboard = (text: string, msg: string) => {
@@ -134,25 +127,147 @@ export default function AlbumDetailScreen() {
             </View>
 
             {/* Botones */}
-            <TouchableOpacity
-              style={styles.primaryBtn}
-              onPress={() => navigation.navigate("AddChallenge", { album })} // <-- pasa el álbum por params
-            >
-              <LinearGradient
-                colors={["#d726a1", "#7e30e1"]}
-                style={styles.gradientBtn}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                      {/* Only show add/view reto buttons to owner or when collaborators allowed */}
+                      { (album.owner === true || album.allow_collaborators === true) && (
+                        <>
+                          <TouchableOpacity
+                            style={styles.primaryBtn}
+                            onPress={() => navigation.navigate("AddChallenge", { album })} // <-- pasa el álbum por params
+                          >
+                            <LinearGradient
+                              colors={["#d726a1", "#7e30e1"]}
+                              style={styles.gradientBtn}
+                              start={{ x: 0, y: 0 }}
+                              end={{ x: 1, y: 0 }}
+                            >
+                              <Text style={styles.primaryBtnText}>+ Añadir Reto</Text>
+                            </LinearGradient>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.secondaryBtn}
+                            onPress={() => navigation.navigate("VerRetos", { album })}
+                          >
+                            <Text style={styles.secondaryBtnText}>Ver Retos</Text>
+                          </TouchableOpacity>
+                        </>
+                      )}
+
+                      {/* Owner-only toggle to allow collaborators */}
+                      { album.owner === true && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontWeight: '700', color: palette.accent2 }}>Permitir colaboradores</Text>
+                            <Text style={{ color: palette.muted, fontSize: 12 }}>Permite que otros usuarios añadan o vean retos en este álbum</Text>
+                          </View>
+                          <Switch
+                            value={!!album.allow_collaborators}
+                            onValueChange={async (val) => {
+                              try {
+                                const resp = await fetch(API_ROUTES.TOGGLE_COLLABORATORS(album.id), {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+                                  body: JSON.stringify({ allow: val })
+                                });
+                                if (!resp.ok) {
+                                  const txt = await resp.text();
+                                  console.error('Toggle collaborators failed', resp.status, txt);
+                                  Alert.alert('Error', 'No se pudo cambiar la configuración: ' + resp.status + '\n' + txt);
+                                  return;
+                                }
+                                const body = await resp.json();
+                                // update local album object (mutating params is fine here as a small local change)
+                                album.allow_collaborators = body.allow_collaborators;
+                                Alert.alert('Guardado', 'Configuración guardada');
+                              } catch (err: any) {
+                                console.error('Toggle collaborators error', err);
+                                Alert.alert('Error', 'No se pudo cambiar la configuración: ' + (err?.message || ''));
+                              }
+                            }}
+                          />
+                        </View>
+                      )}
+
+            {/* Mostrar botón para ver álbum completo si está marcado como completado */}
+            { (album as any).completed && (
+              <TouchableOpacity
+                style={[styles.primaryBtn, { marginTop: 6 }]}
+                onPress={async () => {
+                  // Si ya tenemos los retos en el objeto album, navegar directamente
+                  try {
+                    if (album.challenges && album.challenges.length > 0) {
+                      navigation.navigate("AlbumCompleto", { album });
+                      return;
+                    }
+
+                    // Si no hay retos, pedirlos al backend
+                    const headers: any = { Accept: 'application/json' };
+                    if (token) headers.Authorization = `Bearer ${token}`;
+
+                    const resp = await fetch(API_ROUTES.GET_CHALLENGES(album.id), { headers });
+                    if (resp.status === 401 && album.code) {
+                      // Fallback público: buscar por código (endpoint público)
+                      const f = await fetch(API_ROUTES.FIND_ALBUM_BY_CODE(), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                        body: JSON.stringify({ code: album.code })
+                      });
+                      if (f.ok) {
+                        const body = await f.json();
+                        navigation.navigate('AlbumCompleto', { album: body });
+                        return;
+                      } else {
+                        const txt = await f.text();
+                        Alert.alert('Error', 'No autorizado y no se pudo recuperar el álbum público: ' + f.status + '\n' + txt);
+                        return;
+                      }
+                    }
+
+                    if (!resp.ok) {
+                      const txt = await resp.text();
+                      console.error('GET_CHALLENGES failed', resp.status, txt);
+                      // Intentar fallback público por código si existe
+                      if (album.code) {
+                        try {
+                          const f = await fetch(API_ROUTES.FIND_ALBUM_BY_CODE(), {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                            body: JSON.stringify({ code: album.code })
+                          });
+                          if (f.ok) {
+                            const body = await f.json();
+                            navigation.navigate('AlbumCompleto', { album: body });
+                            return;
+                          }
+                        } catch (err) {
+                          console.error('Fallback FIND_ALBUM_BY_CODE failed', err);
+                        }
+                      }
+                      Alert.alert('Error', 'No se pudo obtener el álbum completo: ' + resp.status + '\n' + txt);
+                      return;
+                    }
+                    const data = await resp.json();
+                    if (data && data.album) {
+                      navigation.navigate('AlbumCompleto', { album: data.album });
+                    } else {
+                      console.error('GET_CHALLENGES returned invalid body', data);
+                      Alert.alert('Error', 'Respuesta inválida del servidor al obtener retos.');
+                    }
+                  } catch (e: any) {
+                    console.error('Error fetching album challenges', e);
+                    Alert.alert('Error', 'No se pudo cargar el álbum completo. Intenta de nuevo.\n' + (e?.message || ''));
+                  }
+                }}
               >
-                <Text style={styles.primaryBtnText}>+ Añadir Reto</Text>
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => navigation.navigate("VerRetos", { album })}
-            >
-              <Text style={styles.secondaryBtnText}>Ver Retos</Text>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={["#ff9ac4", "#d726a1"]}
+                  style={styles.gradientBtn}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.primaryBtnText}>Ver Álbum completo</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
 
             {/* Estadísticas */}
             <View style={styles.statsRow}>

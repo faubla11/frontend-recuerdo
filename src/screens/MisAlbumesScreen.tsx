@@ -56,17 +56,29 @@ export default function MisAlbumesScreen() {
       setLoading(true);
       try {
         if (showCompletedOnly) {
-          const res = await fetch(API_ROUTES.GET_COMPLETED_ALBUMS(), { headers: { Authorization: `Bearer ${token}` } });
+          const res = await fetch(API_ROUTES.GET_COMPLETED_ALBUMS(), { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+          if (!res.ok) {
+            const text = await res.text();
+            console.error('GET_COMPLETED_ALBUMS failed', res.status, text);
+            throw new Error('Failed to fetch completed albums');
+          }
           const data = await res.json();
           const albumsWithAbsoluteUrl = data.albums.map((album: any) => {
-            if (album.bgImage && album.bgImage.startsWith("/")) {
-              return { ...album, bgImage: "https://php-laravel-docker-j6so.onrender.com" + album.bgImage };
+            // Ensure completed albums are flagged so detail screen can show 'Ver Álbum completo'
+            const base = { ...album, completed: true };
+            if (base.bgImage && base.bgImage.startsWith("/")) {
+              return { ...base, bgImage: "https://php-laravel-docker-j6so.onrender.com" + base.bgImage };
             }
-            return album;
+            return base;
           });
           setAlbums(albumsWithAbsoluteUrl);
         } else {
-          const res = await fetch(API_ROUTES.GET_ALBUMS(), { headers: { Authorization: `Bearer ${token}` } });
+          const res = await fetch(API_ROUTES.GET_ALBUMS(), { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+          if (!res.ok) {
+            const text = await res.text();
+            console.error('GET_ALBUMS failed', res.status, text);
+            throw new Error('Failed to fetch albums');
+          }
           const data = await res.json();
           const albumsWithAbsoluteUrl = data.albums.map((album: any) => {
             if (album.bgImage && album.bgImage.startsWith("/")) {

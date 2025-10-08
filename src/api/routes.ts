@@ -14,6 +14,7 @@ export const API_ROUTES = {
   GET_COMPLETED_ALBUMS: () => `${API_BASE}/albums/completed`,
   MARK_ALBUM_COMPLETED: (albumId: number) => `${API_BASE}/albums/${albumId}/complete`,
   FIND_ALBUM_BY_CODE: () => `${API_BASE}/albums/find-by-code`,
+  TOGGLE_COLLABORATORS: (albumId: number) => `${API_BASE}/albums/${albumId}/toggle-collaborators`,
   VALIDATE_CHALLENGE: (id: number) => `${API_BASE}/challenges/${id}/validate`,
   UPDATE_ALBUM_BG_IMAGE: (albumId: number) => `${API_BASE}/albums/${albumId}/bg-image`,
   SIGN_UPLOAD: `${API_BASE}/supabase/sign-upload`,
